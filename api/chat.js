@@ -1,44 +1,44 @@
-export default async function handler(req) {
-  const corsHeaders = {
-    'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Methods': 'POST, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type',
-    'Content-Type': 'application/json',
-  };
+export default async function handler(req, res) {
+  // Handle CORS
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
 
   if (req.method === 'OPTIONS') {
-    return new Response(null, { status: 200, headers: corsHeaders });
+    return res.status(200).end();
+  }
+
+  if (req.method !== 'POST') {
+    return res.status(405).json({ error: 'Method not allowed' });
   }
 
   try {
-    const body = await req.json();
-    const { system, messages, max_tokens } = body;
+    const { system, messages, max_tokens } = req.body;
 
     const apiKey = process.env.GOOGLE_API_KEY;
     if (!apiKey) {
-      return new Response(JSON.stringify({ error: 'Server not configured' }), { status: 500, headers: corsHeaders });
+      return res.status(500).json({ error: 'Server not configured. Add GOOGLE_API_KEY to Vercel environment variables.' });
     }
 
-    // Convert messages format for Gemini
-    const geminiMessages = messages.map(m => ({
-      role: m.role === 'assistant' ? 'model' : 'user',
-      parts: [{ text: m.content }]
-    }));
+    // Build Gemini conversation
+    const geminiMessages = [];
 
-    // Add system prompt as first user message if provided
+    // Add system prompt
     if (system) {
-      geminiMessages.unshift({
-        role: 'user',
-        parts: [{ text: 'SYSTEM INSTRUCTIONS: ' + system }]
-      });
-      geminiMessages.splice(1, 0, {
-        role: 'model',
-        parts: [{ text: 'Understood. I will follow these instructions.' }]
-      });
+      geminiMessages.push({ role: 'user', parts: [{ text: 'INSTRUCTIONS: ' + system }] });
+      geminiMessages.push({ role: 'model', parts: [{ text: 'Understood. I will follow these instructions.' }] });
     }
+
+    // Add conversation messages
+    messages.forEach(function(m) {
+      geminiMessages.push({
+        role: m.role === 'assistant' ? 'model' : 'user',
+        parts: [{ text: m.content }]
+      });
+    });
 
     const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
+      'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=' + apiKey,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -48,26 +48,23 @@ export default async function handler(req) {
             maxOutputTokens: max_tokens || 1000,
             temperature: 0.7,
           }
-        }),
+        })
       }
     );
 
     const data = await response.json();
 
     if (data.error) {
-      return new Response(JSON.stringify({ error: data.error.message }), { status: 400, headers: corsHeaders });
+      return res.status(400).json({ error: data.error.message });
     }
 
-    // Convert Gemini response to Anthropic-style format
     const text = data.candidates?.[0]?.content?.parts?.[0]?.text || 'No response generated.';
-    const result = {
-      content: [{ type: 'text', text: text }]
-    };
 
-    return new Response(JSON.stringify(result), { status: 200, headers: corsHeaders });
+    return res.status(200).json({
+      content: [{ type: 'text', text: text }]
+    });
 
   } catch (err) {
-    return new Response(JSON.stringify({ error: err.message }), { status: 500, headers: corsHeaders });
+    return res.status(500).json({ error: err.message });
   }
 }
-
