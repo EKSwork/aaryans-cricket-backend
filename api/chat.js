@@ -9,44 +9,41 @@ export default async function handler(req, res) {
   try {
     const { system, messages, max_tokens } = req.body;
 
-    const apiKey = process.env.GOOGLE_API_KEY;
-    if (!apiKey) return res.status(500).json({ error: 'GOOGLE_API_KEY not set in Vercel environment variables.' });
+    const apiKey = process.env.GROQ_API_KEY;
+    if (!apiKey) return res.status(500).json({ error: 'GROQ_API_KEY not set in Vercel environment variables.' });
 
-    const geminiMessages = [];
+    // Build messages for Groq (OpenAI-compatible format)
+    const groqMessages = [];
 
+    // Add system message
     if (system) {
-      geminiMessages.push({ role: 'user', parts: [{ text: 'INSTRUCTIONS: ' + system }] });
-      geminiMessages.push({ role: 'model', parts: [{ text: 'Understood.' }] });
+      groqMessages.push({ role: 'system', content: system });
     }
 
+    // Add conversation history
     messages.forEach(function(m) {
-      geminiMessages.push({
-        role: m.role === 'assistant' ? 'model' : 'user',
-        parts: [{ text: m.content }]
-      });
+      groqMessages.push({ role: m.role, content: m.content });
     });
 
-    // Use gemini-2.0-flash - latest free model
-    const response = await fetch(
-      'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=' + apiKey,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: geminiMessages,
-          generationConfig: {
-            maxOutputTokens: max_tokens || 1000,
-            temperature: 0.7,
-          }
-        })
-      }
-    );
+    const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer ' + apiKey
+      },
+      body: JSON.stringify({
+        model: 'llama-3.3-70b-versatile',
+        messages: groqMessages,
+        max_tokens: max_tokens || 1000,
+        temperature: 0.7
+      })
+    });
 
     const data = await response.json();
 
     if (data.error) return res.status(400).json({ error: data.error.message });
 
-    const text = data.candidates?.[0]?.content?.parts?.[0]?.text || 'No response generated.';
+    const text = data.choices?.[0]?.message?.content || 'No response generated.';
 
     return res.status(200).json({
       content: [{ type: 'text', text: text }]
