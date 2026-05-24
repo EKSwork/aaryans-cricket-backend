@@ -8,19 +8,11 @@ export default async function handler(req, res) {
 
   try {
     const { system, messages, max_tokens } = req.body;
-
     const apiKey = process.env.GROQ_API_KEY;
     if (!apiKey) return res.status(500).json({ error: 'GROQ_API_KEY not set in Vercel environment variables.' });
 
-    // Build messages for Groq (OpenAI-compatible format)
     const groqMessages = [];
-
-    // Add system message
-    if (system) {
-      groqMessages.push({ role: 'system', content: system });
-    }
-
-    // Add conversation history
+    if (system) groqMessages.push({ role: 'system', content: system });
     messages.forEach(function(m) {
       groqMessages.push({ role: m.role, content: m.content });
     });
@@ -40,14 +32,9 @@ export default async function handler(req, res) {
     });
 
     const data = await response.json();
-
     if (data.error) return res.status(400).json({ error: data.error.message });
-
-    const text = data.choices?.[0]?.message?.content || 'No response generated.';
-
-    return res.status(200).json({
-      content: [{ type: 'text', text: text }]
-    });
+    const text = data.choices?.[0]?.message?.content || 'No response.';
+    return res.status(200).json({ content: [{ type: 'text', text: text }] });
 
   } catch (err) {
     return res.status(500).json({ error: err.message });
